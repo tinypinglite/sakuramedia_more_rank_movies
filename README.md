@@ -14,5 +14,8 @@
 | `minnano_av` | `daily` / `weekly` / `monthly` | Minnano AV 热门榜 |
 | `javlibrary_bestrated` | `monthly` / `all` | JavLibrary 高评价（上个月 / 全部） |
 | `javlibrary_mostwanted` | `monthly` / `all` | JavLibrary 最想要（上个月 / 全部） |
+## License
 
+本项目采用 [PolyForm Noncommercial License 1.0.0](./LICENSE)，仅允许非商业用途。
 
+Copyright (C) 2026 tinypinglite

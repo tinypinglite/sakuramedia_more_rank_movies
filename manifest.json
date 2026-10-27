@@ -1,8 +1,12 @@
 {
   "plugin_id": "sakuramedia_more_rank_movies",
   "display_name": "SakuraMedia 更多影片榜单",
-  "version": "0.0.4",
-  "host_api_version": 10,
+  "display_name_i18n": {
+    "zh-CN": "SakuraMedia 更多影片榜单",
+    "en": "SakuraMedia More Movie Rankings"
+  },
+  "version": "0.0.5",
+  "host_api_version": 12,
   "requires_python": ">=3.10",
   "author": "tinyping",
   "release_api_url": "https://api.github.com/repos/tinypinglite/sakuramedia_more_rank_movies/releases/latest"

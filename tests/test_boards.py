@@ -60,6 +60,21 @@ def test_ranking_sources_split_by_site():
     ]
 
 
+def test_ranking_sources_declare_english_names():
+    sources, _minnano, _javlibrary = _build_sources()
+
+    assert [source.name_i18n["en"] for source in sources] == [
+        "Minnano AV",
+        "JavLibrary",
+    ]
+    assert [board.name_i18n["en"] for source in sources for board in source.boards] == [
+        "Minnano AV",
+        "JavLibrary Top Rated",
+        "JavLibrary Most Wanted",
+    ]
+    assert sources[1].boards[0].name_i18n["zh-CN"] == "JavLibrary 高评价"
+
+
 def test_minnano_board_periods_and_fetch():
     sources, minnano, _javlibrary = _build_sources()
     board = sources[0].boards[0]

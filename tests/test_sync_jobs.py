@@ -42,6 +42,39 @@ def test_sync_board_params_validation():
         SyncBoardParams(source_key="minnano_av", board_key="Bad-Key")
 
 
+def test_job_declarations_expose_english_cli_help():
+    jobs = build_jobs(_context(), prepare_run=lambda: None, full_sync_total=3)
+
+    assert jobs[0].cli_help_i18n == {
+        "zh-CN": "同步更多影片榜单（Minnano AV、JavLibrary）",
+        "en": "Sync More Movie Rankings (Minnano AV, JavLibrary)",
+    }
+    assert jobs[1].cli_help_i18n["en"] == (
+        "Manually sync a single board from More Movie Rankings"
+    )
+
+
+def test_sync_board_params_schema_exposes_localized_options():
+    properties = SyncBoardParams.model_json_schema()["properties"]
+
+    assert properties["board_key"]["title_i18n"]["en"] == "Board"
+    board_options = {
+        option["const"]: option for option in properties["board_key"]["oneOf"]
+    }
+    assert board_options["javlibrary_mostwanted"]["title_i18n"] == {
+        "zh-CN": "JavLibrary 最想要",
+        "en": "JavLibrary Most Wanted",
+    }
+    assert board_options["javlibrary_bestrated"]["x-when"] == ["javlibrary"]
+
+    period_options = {
+        option["const"]: option for option in properties["period"]["oneOf"]
+    }
+    assert period_options["daily"]["x-when"] == ["minnano_av"]
+    assert period_options["all"]["title_i18n"]["en"] == "All"
+    assert properties["period"]["x-options-by"] == "board_key"
+
+
 def test_sync_all_handler_prepares_run_and_passes_progress():
     calls = []
     context = _context()

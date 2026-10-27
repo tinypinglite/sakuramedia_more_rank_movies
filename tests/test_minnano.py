@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 from sakuramedia_more_rank_movies.minnano import (
@@ -7,6 +9,11 @@ from sakuramedia_more_rank_movies.minnano import (
     parse_minnano_ranking,
     parse_minnano_ranking_entries,
 )
+
+from src.i18n.locale import LanguageState, reset_language_state, set_language_state
+from src.plugins.i18n import PluginI18n
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
 RANKING_HTML = """
 <table class="tbllist av">
@@ -174,3 +181,35 @@ def test_client_rejects_unknown_period():
         pytest.raises(ValueError, match="不支持"),
     ):
         client.get_rank_numbers("yearly")
+
+
+def test_client_errors_follow_english_language():
+    def handler(request):
+        return httpx.Response(503, request=request)
+
+    i18n = PluginI18n("sakuramedia_more_rank_movies", PLUGIN_ROOT)
+    token = set_language_state(LanguageState(header_language="en"))
+    try:
+        with (
+            MinnanoAvClient(
+                transport=httpx.MockTransport(handler),
+                request_interval_seconds=0,
+                i18n=i18n,
+            ) as client,
+            pytest.raises(
+                MinnanoRankingError,
+                match=r"Minnano AV ranking returned HTTP 503",
+            ),
+        ):
+            client.get_rank_numbers("daily")
+
+        with (
+            MinnanoAvClient(request_interval_seconds=0, i18n=i18n) as client,
+            pytest.raises(
+                ValueError,
+                match=r"Unsupported Minnano AV ranking period: yearly",
+            ),
+        ):
+            client.get_rank_numbers("yearly")
+    finally:
+        reset_language_state(token)

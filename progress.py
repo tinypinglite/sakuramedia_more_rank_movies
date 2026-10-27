@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Mapping
+from typing import Any
+
+from .translations import runtime_text
 
 
 class RankingProgress:
@@ -19,6 +22,7 @@ class RankingProgress:
         *,
         total: int,
         heartbeat_seconds: float = 2,
+        i18n: Any = None,
     ):
         if total < 1:
             raise ValueError("排行榜进度 total 必须大于 0")
@@ -26,6 +30,7 @@ class RankingProgress:
         self.total = total
         self.current = 0
         self.heartbeat_seconds = heartbeat_seconds
+        self.i18n = i18n
         self._succeeded = 0
         self._failed = 0
         self._skipped = 0
@@ -57,19 +62,21 @@ class RankingProgress:
         summary.update(self._metrics)
         return summary
 
-    def _text_locked(self, action: str) -> str:
+    def _text_locked(self, action_key: str) -> str:
         summary = self._summary_locked()
-        text = (
-            f"阶段 1/1 · 同步排行榜周期 · {action} · "
-            f"已完成 {self.current}/{self.total} · "
-            f"成功 {summary['succeeded']} · 失败 {summary['failed']} · "
-            f"待处理 {summary['pending']}"
-        )
-        if summary["skipped"]:
-            text += f" · 跳过 {summary['skipped']}"
-        return text[:255]
+        params = {
+            "action": runtime_text(self.i18n, action_key),
+            "current": self.current,
+            "total": self.total,
+            "succeeded": summary["succeeded"],
+            "failed": summary["failed"],
+            "pending": summary["pending"],
+            "skipped": summary["skipped"],
+        }
+        key = "progress.text_with_skipped" if summary["skipped"] else "progress.text"
+        return runtime_text(self.i18n, key, **params)[:255]
 
-    def _emit_locked(self, action: str) -> None:
+    def _emit_locked(self, action_key: str) -> None:
         callback = self._callback()
         if callback is None:
             return
@@ -77,7 +84,7 @@ class RankingProgress:
             {
                 "current": self.current,
                 "total": self.total,
-                "text": self._text_locked(action),
+                "text": self._text_locked(action_key),
                 "summary_patch": self._summary_locked(),
             }
         )
@@ -112,7 +119,7 @@ class RankingProgress:
     def start(self) -> None:
         """阶段开始立即上报，并启动无数量变化时的心跳。"""
         with self._lock:
-            self._emit_locked("正在等待首个榜单响应")
+            self._emit_locked("progress.action.waiting_first")
         if self._callback() is not None and self.heartbeat_seconds > 0:
             self._heartbeat_thread = threading.Thread(
                 target=self._heartbeat,
@@ -134,12 +141,12 @@ class RankingProgress:
             if isinstance(stats, Mapping):
                 self._apply_stats_locked(stats)
             if self.current >= self.total:
-                action = "已完成全部周期"
+                action_key = "progress.action.all_done"
             elif self.current:
-                action = "已完成当前周期，准备下一个周期"
+                action_key = "progress.action.cycle_done"
             else:
-                action = "正在等待首个榜单响应"
-            self._emit_locked(action)
+                action_key = "progress.action.waiting_first"
+            self._emit_locked(action_key)
 
     def finish(self, result: Mapping | None = None) -> None:
         """阶段完成，current 到 total，摘要保留宿主返回的最终累计值。"""
@@ -151,7 +158,7 @@ class RankingProgress:
                     self.total = raw_total
                 self._apply_stats_locked(result, assume_success=True)
             self.current = self.total
-            self._emit_locked("已完成")
+            self._emit_locked("progress.action.finished")
 
     def fail(self) -> None:
         """任务级异常时收口进度，不掩盖原异常。"""
@@ -159,14 +166,14 @@ class RankingProgress:
         with self._lock:
             self.current = min(self.current + 1, self.total)
             self._failed += 1
-            self._emit_locked("任务中止")
+            self._emit_locked("progress.action.aborted")
 
     def _heartbeat(self) -> None:
         while not self._stop.wait(self.heartbeat_seconds):
             with self._lock:
                 if self.current >= self.total:
                     return
-                self._emit_locked("正在等待宿主处理当前周期")
+                self._emit_locked("progress.action.waiting_host")
 
     def _stop_heartbeat(self) -> None:
         self._stop.set()

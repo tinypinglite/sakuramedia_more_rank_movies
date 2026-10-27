@@ -5,8 +5,11 @@ from __future__ import annotations
 import re
 import time
 from html.parser import HTMLParser
+from typing import Any
 
 import httpx
+
+from .translations import runtime_text
 
 JAVLIBRARY_BASE = "https://www.f101w.com"
 JAVLIBRARY_BESTRATED_PATH = "vl_bestrated.php"
@@ -68,14 +71,16 @@ class _VideoIdParser(HTMLParser):
         self._buffer = []
 
 
-def parse_javlibrary_ranking(content: str) -> list[str]:
+def parse_javlibrary_ranking(content: str, *, i18n: Any = None) -> list[str]:
     """按榜单顺序解析番号；无 ``div.video`` 或全部缺番号时返回空列表。"""
     parser = _VideoIdParser()
     try:
         parser.feed(content)
         parser.close()
     except Exception as exc:
-        raise JavLibraryRankingError("JavLibrary 榜单 HTML 解析失败") from exc
+        raise JavLibraryRankingError(
+            runtime_text(i18n, "javlibrary.error.ranking_parse")
+        ) from exc
     return parser.items
 
 
@@ -89,8 +94,10 @@ class JavLibraryClient:
         transport=None,
         request_interval_seconds: float = 1,
         max_pages: int = JAVLIBRARY_MAX_PAGES,
+        i18n: Any = None,
     ):
         self.request_interval_seconds = request_interval_seconds
+        self.i18n = i18n
         self.max_pages = max_pages
         self._last_request_at = 0.0
         self.client = httpx.Client(
@@ -118,7 +125,10 @@ class JavLibraryClient:
     def close(self):
         self.client.close()
 
-    def _request_page(self, url: str, *, page_name: str) -> str:
+    def _t(self, key: str, **params: Any) -> str:
+        return runtime_text(self.i18n, key, **params)
+
+    def _request_page(self, url: str, *, page: str) -> str:
         delay = self.request_interval_seconds - (
             time.monotonic() - self._last_request_at
         )
@@ -128,17 +138,23 @@ class JavLibraryClient:
             response = self.client.get(url)
         except httpx.HTTPError as exc:
             raise JavLibraryRankingError(
-                f"JavLibrary {page_name}请求失败"
+                self._t("javlibrary.error.http_request", page=page)
             ) from exc
         finally:
             self._last_request_at = time.monotonic()
 
         if response.status_code != 200:
             raise JavLibraryRankingError(
-                f"JavLibrary {page_name}返回 HTTP {response.status_code}"
+                self._t(
+                    "javlibrary.error.http_status",
+                    page=page,
+                    status=response.status_code,
+                )
             )
         if response.url.host != _JAVLIBRARY_HOST:
-            raise JavLibraryRankingError(f"JavLibrary {page_name}发生未知跳转")
+            raise JavLibraryRankingError(
+                self._t("javlibrary.error.unexpected_redirect", page=page)
+            )
         return response.text
 
     def get_bestrated_numbers(self, period: str) -> list[str]:
@@ -150,14 +166,18 @@ class JavLibraryClient:
     def _get_rank_numbers(self, path: str, period: str) -> list[str]:
         mode = JAVLIBRARY_MODE_BY_PERIOD.get(period.strip().lower())
         if mode is None:
-            raise ValueError(f"不支持的 JavLibrary 榜单周期: {period}")
+            raise ValueError(
+                self._t("javlibrary.error.unsupported_period", period=period)
+            )
 
         numbers: list[str] = []
         seen: set[str] = set()
         for page in range(1, self.max_pages + 1):
             url = f"{JAVLIBRARY_BASE}/cn/{path}?&mode={mode}&page={page}"
+            page_label = self._t("javlibrary.page.ranking_page", page=page)
             items = parse_javlibrary_ranking(
-                self._request_page(url, page_name=f"榜单第 {page} 页")
+                self._request_page(url, page=page_label),
+                i18n=self.i18n,
             )
             if not items:
                 break
@@ -166,5 +186,7 @@ class JavLibraryClient:
                     seen.add(code)
                     numbers.append(code)
         if not numbers:
-            raise JavLibraryRankingError("JavLibrary 榜单没有可用番号")
+            raise JavLibraryRankingError(
+                self._t("javlibrary.error.ranking_no_numbers")
+            )
         return numbers

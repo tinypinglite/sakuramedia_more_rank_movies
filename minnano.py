@@ -7,10 +7,13 @@ import re
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from typing import Any
 from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 import httpx
 from loguru import logger
+
+from .translations import runtime_text
 
 MINNANO_AV = "https://www.minnano-av.com"
 MINNANO_RANKING_URLS = {
@@ -160,15 +163,23 @@ def _extract_minnano_detail_url(href: str) -> str:
     return absolute
 
 
-def _parse_ranking_entries(content: str) -> list[MinnanoRankingEntry]:
+def _parse_ranking_entries(
+    content: str,
+    *,
+    i18n: Any = None,
+) -> list[MinnanoRankingEntry]:
     parser = _RankingTableParser()
     try:
         parser.feed(content)
         parser.close()
     except Exception as exc:
-        raise MinnanoRankingError("Minnano AV 榜单 HTML 解析失败") from exc
+        raise MinnanoRankingError(
+            runtime_text(i18n, "minnano.error.ranking_parse")
+        ) from exc
     if not parser.table_found:
-        raise MinnanoRankingError("Minnano AV 榜单表格不存在")
+        raise MinnanoRankingError(
+            runtime_text(i18n, "minnano.error.ranking_table_missing")
+        )
 
     entries: list[MinnanoRankingEntry] = []
     seen: set[str] = set()
@@ -186,18 +197,26 @@ def _parse_ranking_entries(content: str) -> list[MinnanoRankingEntry]:
             seen.add(dmm_cid)
             entries.append(MinnanoRankingEntry(detail_url=detail_url, dmm_cid=dmm_cid))
     if not entries:
-        raise MinnanoRankingError("Minnano AV 榜单没有可用 DMM 番号")
+        raise MinnanoRankingError(
+            runtime_text(i18n, "minnano.error.ranking_no_dmm_numbers")
+        )
     return entries
 
 
-def parse_minnano_ranking_entries(content: str) -> list[MinnanoRankingEntry]:
+def parse_minnano_ranking_entries(
+    content: str,
+    *,
+    i18n: Any = None,
+) -> list[MinnanoRankingEntry]:
     """解析榜单条目及其 Minnano 作品详情链接。"""
-    return _parse_ranking_entries(content)
+    return _parse_ranking_entries(content, i18n=i18n)
 
 
-def parse_minnano_ranking(content: str) -> list[str]:
+def parse_minnano_ranking(content: str, *, i18n: Any = None) -> list[str]:
     """解析榜单中的 DMM CID，保留旧的解析接口。"""
-    return [entry.dmm_cid for entry in _parse_ranking_entries(content)]
+    return [
+        entry.dmm_cid for entry in _parse_ranking_entries(content, i18n=i18n)
+    ]
 
 
 class _ProductCodeParser(HTMLParser):
@@ -253,16 +272,20 @@ class _ProductCodeParser(HTMLParser):
         self._data_code = ""
 
 
-def parse_minnano_product_code(content: str) -> str:
+def parse_minnano_product_code(content: str, *, i18n: Any = None) -> str:
     """解析 Minnano 作品详情页中的正式番号。"""
     parser = _ProductCodeParser()
     try:
         parser.feed(content)
         parser.close()
     except Exception as exc:
-        raise MinnanoRankingError("Minnano AV 作品详情页解析失败") from exc
+        raise MinnanoRankingError(
+            runtime_text(i18n, "minnano.error.detail_parse")
+        ) from exc
     if not parser.product_code:
-        raise MinnanoProductCodeMissingError("Minnano AV 作品详情页没有可用正式番号")
+        raise MinnanoProductCodeMissingError(
+            runtime_text(i18n, "minnano.error.detail_no_product_code")
+        )
     return parser.product_code
 
 
@@ -275,8 +298,10 @@ class MinnanoAvClient:
         *,
         transport=None,
         request_interval_seconds: float = 1,
+        i18n: Any = None,
     ):
         self.request_interval_seconds = request_interval_seconds
+        self.i18n = i18n
         self._last_request_at = 0.0
         self.client = httpx.Client(
             timeout=timeout_seconds,
@@ -304,7 +329,11 @@ class MinnanoAvClient:
     def close(self):
         self.client.close()
 
-    def _request_page(self, url: str, *, page_name: str) -> str:
+    def _t(self, key: str, **params: Any) -> str:
+        return runtime_text(self.i18n, key, **params)
+
+    def _request_page(self, url: str, *, page_key: str) -> str:
+        page = self._t(page_key)
         delay = self.request_interval_seconds - (
             time.monotonic() - self._last_request_at
         )
@@ -313,16 +342,24 @@ class MinnanoAvClient:
         try:
             response = self.client.get(url)
         except httpx.HTTPError as exc:
-            raise MinnanoRankingError(f"Minnano AV {page_name}请求失败") from exc
+            raise MinnanoRankingError(
+                self._t("minnano.error.http_request", page=page)
+            ) from exc
         finally:
             self._last_request_at = time.monotonic()
 
         if response.status_code != 200:
             raise MinnanoRankingError(
-                f"Minnano AV {page_name}返回 HTTP {response.status_code}"
+                self._t(
+                    "minnano.error.http_status",
+                    page=page,
+                    status=response.status_code,
+                )
             )
         if response.url.host != _MINNANO_HOST:
-            raise MinnanoRankingError(f"Minnano AV {page_name}发生未知跳转")
+            raise MinnanoRankingError(
+                self._t("minnano.error.unexpected_redirect", page=page)
+            )
         return response.text
 
     def _get_product_code(self, detail_url: str) -> str:
@@ -330,7 +367,8 @@ class MinnanoAvClient:
         if cached is not None:
             return cached
         product_code = parse_minnano_product_code(
-            self._request_page(detail_url, page_name="作品详情页")
+            self._request_page(detail_url, page_key="minnano.page.detail"),
+            i18n=self.i18n,
         )
         self._product_code_cache[detail_url] = product_code
         return product_code
@@ -339,10 +377,13 @@ class MinnanoAvClient:
         normalized_period = period.strip().lower()
         url = MINNANO_RANKING_URLS.get(normalized_period)
         if url is None:
-            raise ValueError(f"不支持的 Minnano AV 榜单周期: {period}")
+            raise ValueError(
+                self._t("minnano.error.unsupported_period", period=period)
+            )
 
         entries = parse_minnano_ranking_entries(
-            self._request_page(url, page_name="榜单")
+            self._request_page(url, page_key="minnano.page.ranking"),
+            i18n=self.i18n,
         )
         numbers: list[str] = []
         seen: set[str] = set()
@@ -361,5 +402,7 @@ class MinnanoAvClient:
                 seen.add(product_code)
                 numbers.append(product_code)
         if not numbers:
-            raise MinnanoRankingError("Minnano AV 榜单没有可用正式番号")
+            raise MinnanoRankingError(
+                self._t("minnano.error.ranking_no_product_codes")
+            )
         return numbers

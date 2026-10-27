@@ -1,7 +1,13 @@
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 
 from sakuramedia_more_rank_movies.progress import RankingProgress
+
+from src.i18n.locale import LanguageState, reset_language_state, set_language_state
+from src.plugins.i18n import PluginI18n
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_progress_reports_start_updates_and_cumulative_finish():
@@ -93,3 +99,29 @@ def test_progress_emits_heartbeat_while_waiting():
     progress.finish({"total_targets": 3, "success_targets": 3, "failed_targets": 0})
 
     assert any("正在等待宿主处理当前周期" in event["text"] for event in events)
+
+
+def test_progress_text_follows_english_language():
+    events = []
+    i18n = PluginI18n("sakuramedia_more_rank_movies", PLUGIN_ROOT)
+    token = set_language_state(LanguageState(header_language="en"))
+    try:
+        progress = RankingProgress(
+            SimpleNamespace(progress_callback=events.append),
+            total=1,
+            heartbeat_seconds=60,
+            i18n=i18n,
+        )
+        progress.start()
+        progress.finish(
+            {"total_targets": 1, "success_targets": 1, "failed_targets": 0}
+        )
+    finally:
+        reset_language_state(token)
+
+    assert events[0]["text"].startswith("Stage 1/1 · Sync ranking cycles")
+    assert "Waiting for the first ranking response" in events[0]["text"]
+    assert events[-1]["text"].startswith("Stage 1/1 · Sync ranking cycles")
+    assert "Finished" in events[-1]["text"]
+    assert "Succeeded 1 · Failed 0 · Pending 0" in events[-1]["text"]
+    assert "已完成" not in events[-1]["text"]

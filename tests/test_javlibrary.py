@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import httpx
 import pytest
 from sakuramedia_more_rank_movies.javlibrary import (
@@ -6,6 +8,11 @@ from sakuramedia_more_rank_movies.javlibrary import (
     JavLibraryRankingError,
     parse_javlibrary_ranking,
 )
+
+from src.i18n.locale import LanguageState, reset_language_state, set_language_state
+from src.plugins.i18n import PluginI18n
+
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 
 RANKING_HTML = """
 <div class="videothumblist">
@@ -139,3 +146,35 @@ def test_client_rejects_unknown_period():
         pytest.raises(ValueError, match="不支持"),
     ):
         client.get_bestrated_numbers("yearly")
+
+
+def test_client_errors_follow_english_language():
+    def handler(request):
+        return httpx.Response(200, text="<html></html>", request=request)
+
+    i18n = PluginI18n("sakuramedia_more_rank_movies", PLUGIN_ROOT)
+    token = set_language_state(LanguageState(header_language="en"))
+    try:
+        with (
+            JavLibraryClient(
+                transport=httpx.MockTransport(handler),
+                request_interval_seconds=0,
+                i18n=i18n,
+            ) as client,
+            pytest.raises(
+                JavLibraryRankingError,
+                match=r"JavLibrary ranking has no usable movie numbers",
+            ),
+        ):
+            client.get_bestrated_numbers("monthly")
+
+        with (
+            JavLibraryClient(request_interval_seconds=0, i18n=i18n) as client,
+            pytest.raises(
+                ValueError,
+                match=r"Unsupported JavLibrary ranking period: yearly",
+            ),
+        ):
+            client.get_bestrated_numbers("yearly")
+    finally:
+        reset_language_state(token)

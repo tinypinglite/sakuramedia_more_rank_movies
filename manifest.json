@@ -5,7 +5,12 @@
     "zh-CN": "SakuraMedia 更多影片榜单",
     "en": "SakuraMedia More Movie Rankings"
   },
-  "version": "0.0.5",
+  "description": "接入 Minnano AV 和 JavLibrary，提供 Minnano AV 日榜/周榜/月榜以及 JavLibrary 高评价、最想要榜单，并注册定时同步任务。",
+  "description_i18n": {
+    "zh-CN": "接入 Minnano AV 和 JavLibrary，提供 Minnano AV 日榜/周榜/月榜以及 JavLibrary 高评价、最想要榜单，并注册定时同步任务。",
+    "en": "Connects to Minnano AV and JavLibrary, offering Minnano AV daily, weekly and monthly charts plus JavLibrary best-rated and most-wanted boards, and registers scheduled sync jobs."
+  },
+  "version": "0.0.6",
   "host_api_version": 12,
   "requires_python": ">=3.10",
   "author": "tinyping",

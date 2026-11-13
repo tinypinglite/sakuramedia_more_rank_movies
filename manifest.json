@@ -10,7 +10,7 @@
     "zh-CN": "接入 Minnano AV 和 JavLibrary，提供 Minnano AV 日榜/周榜/月榜以及 JavLibrary 高评价、最想要榜单，并注册定时同步任务。",
     "en": "Connects to Minnano AV and JavLibrary, offering Minnano AV daily, weekly and monthly charts plus JavLibrary best-rated and most-wanted boards, and registers scheduled sync jobs."
   },
-  "version": "0.0.7",
+  "version": "0.0.8",
   "host_api_version": 18,
   "requires_python": ">=3.10",
   "author": "tinyping",
